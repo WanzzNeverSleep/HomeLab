@@ -16,7 +16,7 @@ Instead of buying expensive enterprise equipment, I optimized what I had. This s
 * **ROM:** 8 GB eMMC
 * **External Storage:** 32 GB USB Flash Drive (Used for boot & main storage)
 
-![STB](img/STB-HG680P.png)
+<img src="img/STB-HG680P.png" width="300">
 
 ---
 
