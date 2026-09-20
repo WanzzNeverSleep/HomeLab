@@ -1,115 +1,92 @@
-#  My Budget-Friendly Home Lab: ARM64 Infrastructure & Self-Hosting
+# My Home Lab — ARM64 Self-Hosted Server on a TV Box
 
-Welcome to my Home Lab repository! This project documents my journey of repurposing an unused Android TV Box into a fully functional, low-power Linux mini-server. 
+I had an old Android TV box sitting around doing nothing. Turns out it makes a surprisingly decent low-power home server. This repo documents what I've set up on it and how.
 
-My primary goal is to build an efficient, cost-effective infrastructure to learn system administration, containerization, and secure remote networking.
+The hardware is constrained, the budget is minimal, but it runs everything I need.
 
 ---
 
-## 🖥️ Hardware Specifications
+## Hardware
 
-Instead of buying expensive enterprise equipment, I optimized what I had. This setup proves that you can run a capable server environment on highly constrained resources.
-
-* **Device Model:** STB HG680p (Repurposed Android TV Box)
-* **Architecture:** ARM64
-* **RAM:** 2 GB
-* **ROM:** 8 GB eMMC
-* **External Storage:** 32 GB USB Flash Drive (Used for boot & main storage)
+**Device:** Fiberhome HG680P (repurposed Android TV box)  
+**Architecture:** ARM64  
+**RAM:** 2GB  
+**Storage:** 8GB eMMC + 256GB external HDD  
 
 <img src="img/STB-HG680P.png" width="300">
 
+Not exactly a rack server, but it handles Docker, Nextcloud, and a Cloudflare tunnel without breaking a sweat.
+
 ---
 
-## 🗺️ Network Topology
-
-Below is a simple diagram illustrating how my home lab is structured, from the local network setup to how it securely connects to the outside world.
+## Network Layout
 
 ![Home Lab Topology](img/topology.png)
 
 ---
 
-## 🛠️ Base OS & Provisioning
+## OS — Armbian
 
-To turn the Android TV box into a server, I replaced the stock Android OS with a lightweight Linux distribution.
+Replaced stock Android with **Armbian OS (v25.05.0)** built for Amlogic S905X. Flashed it using Balena Etcher.
 
-1. **OS Selection:** I am running **Armbian OS (v25.05.00)**, sourced from a local Mini Server community.
-2. **Flashing Process:** I used **BalenaEtcher** to flash the Armbian image onto the 32GB USB Drive.
-3. **Troubleshooting the Boot Sequence:** Initially, the STB refused to boot from the USB drive and booted straight into Android. After consulting with the community, I discovered that triggering a forced reboot while the USB was plugged in would interrupt the bootloader and successfully boot into Armbian.
+Getting it to boot was a bit of a journey — the STB defaults to booting Android and ignores external storage unless you force it. A `reboot update` command from Android's terminal emulator does the trick, which tells the bootloader to check external storage on the next boot.
+
+> If you're trying to do the same thing and hit a `DDR_ENC.USB` error or end up with a bricked device, I wrote a separate guide for that: [amlogic-s905x-unbrick](https://github.com/WanzzNeverSleep/docs/amlogic-s905x-DDR-ENC-error.md)
 
 ---
 
-## 📦 Containerization & Management
+## Containers — Docker + CasaOS
 
-To keep the system clean and make application deployments easier, I utilize Docker. To simplify container management, I use **CasaOS** as my primary dashboard.
-
-**Installing Docker Engine:**
-```bash
-sudo apt-get update
-sudo apt-get install docker-ce
-
-```
-
-**Installing CasaOS:**
+I use Docker for everything and CasaOS as a dashboard to manage it without typing `docker ps` every five minutes.
 
 ```bash
+# Docker
+sudo apt-get update && sudo apt-get install docker-ce
+
+# CasaOS
 curl -fsSL get.casaos.io/install.sh | sudo bash
-
 ```
 
 ---
 
-## 🌐 Networking & Secure Remote Access
+## Remote Access — Cloudflare Tunnel
 
-I wanted to access my CasaOS dashboard and other self-hosted services from anywhere without compromising my home network's security. Since I am behind a standard ISP router, traditional Port Forwarding was not ideal.
+I wanted to reach my services from outside the house without opening ports on my router. Cloudflare Tunnel handles this cleanly — it's an outbound-only connection, so nothing is directly exposed to the internet.
 
-**Solution: Cloudflare Tunnel (Zero Trust)**
-I purchased a personal domain (`wanzz.my.id`) and implemented a Cloudflare Tunnel. This creates a secure, outbound-only connection to Cloudflare's edge, allowing me to expose my local services safely.
-
-**1. Installing `cloudflared` on Armbian:**
+I bought a domain (`wanzz.my.id`) and routed everything through Cloudflare's zero trust network.
 
 ```bash
+# Install cloudflared
 sudo mkdir -p --mode=0755 /usr/share/keyrings
-curl -fsSL [https://pkg.cloudflare.com/cloudflare-main.gpg](https://pkg.cloudflare.com/cloudflare-main.gpg) | sudo tee /usr/share/keyrings/cloudflare-main.gpg >/dev/null
-
-echo 'deb [signed-by=/usr/share/keyrings/cloudflare-main.gpg] [https://pkg.cloudflare.com/cloudflared](https://pkg.cloudflare.com/cloudflared) any main' | sudo tee /etc/apt/sources.list.d/cloudflared.list
-
+curl -fsSL https://pkg.cloudflare.com/cloudflare-main.gpg | sudo tee /usr/share/keyrings/cloudflare-main.gpg >/dev/null
+echo 'deb [signed-by=/usr/share/keyrings/cloudflare-main.gpg] https://pkg.cloudflare.com/cloudflared any main' | sudo tee /etc/apt/sources.list.d/cloudflared.list
 sudo apt-get update && sudo apt-get install cloudflared
 
-```
-
-**2. Authenticating & Running the Service:**
-
-```bash
+# Set up the tunnel
 sudo cloudflared service install <CLOUDFLARE_TOKEN>
 sudo systemctl start cloudflared
-
 ```
 
-I use Cloudflare Tunnel to access my home lab applications from anywhere without exposing open inbound ports on my home router.
-
 ---
-## ☁️ Self-Hosted NAS: Nextcloud + MariaDB + Redis
 
-To manage and securely store my personal data, I deployed a private NAS using **Nextcloud**. To ensure high performance and low resource footprint on ARM64 hardware, the stack is optimized with **MariaDB 11** for database management and **Redis** for memory caching.
+## Self-Hosted Cloud — Nextcloud + MariaDB + Redis
 
-### 1. Directory & Storage Setup
+My main use case. I don't love having my files on Google Drive or iCloud, so I run Nextcloud on the HDD for storage.
 
-First, I created the dedicated container directories and configured the external storage mount point permissions for Nextcloud's `www-data` user (UID `33`):
+The stack is Nextcloud + MariaDB 11 + Redis. MariaDB because it's lighter than MySQL on ARM, Redis to cache file metadata so the UI doesn't crawl.
+
+### Directory Setup
 
 ```bash
-# Create directory structure
 mkdir -p ~/docker/nextcloud/{nextcloud,mariadb,redis}
 cd ~/docker/nextcloud
 
-# Create and set permissions for external storage
+# External storage for Nextcloud data (owned by www-data, UID 33)
 sudo mkdir -p /mnt/storage/nextcloud-data
 sudo chown -R 33:33 /mnt/storage/nextcloud-data
-
 ```
 
-### 2. Docker Compose Configuration
-
-Created the `compose.yml` file to orchestrate the Nextcloud stack:
+### compose.yml
 
 ```yaml
 services:
@@ -119,10 +96,10 @@ services:
     restart: unless-stopped
     command: --transaction-isolation=READ-COMMITTED --binlog-format=ROW
     environment:
-      MYSQL_ROOT_PASSWORD: <YOUR_MYSQL_ROOT_PASSWORD>
+      MYSQL_ROOT_PASSWORD: <MYSQL_ROOT_PASSWORD>
       MYSQL_DATABASE: nextcloud
       MYSQL_USER: nextcloud
-      MYSQL_PASSWORD: <YOUR_MYSQL_PASSWORD>
+      MYSQL_PASSWORD: <MYSQL_PASSWORD>
       MYSQL_INITDB_SKIP_TZINFO: "1"
     volumes:
       - ./mariadb:/var/lib/mysql
@@ -144,60 +121,54 @@ services:
     environment:
       MYSQL_DATABASE: nextcloud
       MYSQL_USER: nextcloud
-      MYSQL_PASSWORD: <YOUR_MYSQL_PASSWORD>
+      MYSQL_PASSWORD: <MYSQL_PASSWORD>
       MYSQL_HOST: db
       REDIS_HOST: redis
     volumes:
       - ./nextcloud:/var/www/html
       - /mnt/storage/nextcloud-data:/var/www/html/data
-
 ```
-
-Deploying the stack:
 
 ```bash
 docker compose up -d
-
 ```
 
-### 3. Secure Remote Access & Trusted Domains
+### Trusted Domains
 
-I exposed Nextcloud securely using Cloudflare Tunnel routed to `cld.wanzz.my.id` pointing to `http://192.168.1.2:8090`.
-
-To allow Nextcloud to accept incoming requests from the Cloudflare domain, I edited Nextcloud's `config.php`:
+Nextcloud needs to explicitly trust the domain you're accessing it from. Add it to `config.php`:
 
 ```bash
 nano ~/docker/nextcloud/nextcloud/config/config.php
-
 ```
 
-Added the domain under the `trusted_domains` array:
-
 ```php
-'trusted_domains' => 
+'trusted_domains' =>
   array (
     0 => '192.168.1.2:8090',
     1 => 'cld.wanzz.my.id',
   ),
-
 ```
 
----
-**Result:** I successfully routed `casa.wanzz.my.id` and `cld.wanzz.my.id` through the tunnel to my local CasaOS and NextCloud port. I can now manage my server securely from anywhere in the world!
-* **CasaOS Dashboard:** `casa.wanzz.my.id`
-* **Nextcloud Private Cloud:** `cld.wanzz.my.id`
+### Result
+
+Both services are now accessible from anywhere through Cloudflare Tunnel:
+
+- **CasaOS:** `casa.wanzz.my.id`
+- **Nextcloud:** `cld.wanzz.my.id`
 
 ---
 
-## 📈 Future Projects (Roadmap)
+## What's Next
 
-Since this is an ongoing project, here are a few things I plan to implement next:
-
-* [x] Repurpose Android TV Box into a Linux Server.
-* [x] Implement secure remote access via Cloudflare Tunnel.
-* [ ] Deploy an ad-blocker (Wireguard / AdGuard Home) for the local network
-* [x] Set up a personal cloud storage solution (Nextcloud).
+- [x] Repurpose Android TV box as a Linux server
+- [x] Set up Nextcloud for personal cloud storage
+- [x] Secure remote access via Cloudflare Tunnel
+- [ ] Network-wide ad blocking (AdGuard Home or Pi-hole)
+- [ ] VPN (Wireguard)
+- [ ] Automated backups
 
 ---
 
-*If you have any questions or suggestions regarding this setup, feel free to open an Issue or reach out!*
+## Related
+
+- [amlogic-s905x-unbrick](https://github.com/WanzzNeverSleep/docs/amlogic-s905x-DDR-ENC-error.md) — Recovery guide for bricked HG680P and other Amlogic S905X devices
