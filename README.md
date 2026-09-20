@@ -1,4 +1,4 @@
-# 🚀 My Budget-Friendly Home Lab: ARM64 Infrastructure & Self-Hosting
+#  My Budget-Friendly Home Lab: ARM64 Infrastructure & Self-Hosting
 
 Welcome to my Home Lab repository! This project documents my journey of repurposing an unused Android TV Box into a fully functional, low-power Linux mini-server. 
 
