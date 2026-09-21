@@ -21,7 +21,7 @@ Not exactly a rack server, but it handles Docker, Nextcloud, and a Cloudflare tu
 
 ## Network Layout
 
-![Home Lab Topology](img/topology.png)
+<img src="img/topology.png" width="300">
 
 ---
 
